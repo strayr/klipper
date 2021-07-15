@@ -88,6 +88,7 @@ class MCU_TMC_uart_bitbang:
                                              select_pins_desc)
         self.instances = {}
         self.tmcuart_send_cmd = None
+        self.min_time = 0.
         self.mcu.register_config_callback(self.build_config)
     def build_config(self):
         bit_ticks = self.mcu.seconds_to_clock(1. / TMC_BAUD_RATE)
@@ -165,20 +166,33 @@ class MCU_TMC_uart_bitbang:
         if data != encoded_data:
             return None
         return val
+    def _calc_min_clock(self, minclock=0):
+        pt = self.mcu.estimated_print_time(self.min_time)
+        clock = self.mcu.print_time_to_clock(pt)
+        return max(minclock, clock)
     def reg_read(self, instance_id, addr, reg):
         if self.analog_mux is not None:
             self.analog_mux.activate(instance_id)
         msg = self._encode_read(0xf5, addr, reg)
-        params = self.tmcuart_send_cmd.send([self.oid, msg, 10])
-        return self._decode_read(reg, params['read'])
+        params = self.tmcuart_send_cmd.send([self.oid, msg, 10],
+                                            minclock=self._calc_min_clock())
+        ret = self._decode_read(reg, params['read'])
+        if ret is None:
+            self.min_time = params['#receive_time'] + (63.+12.) / TMC_BAUD_RATE
+        else:
+            self.min_time = params['#receive_time'] + 12. / TMC_BAUD_RATE
+        return ret
     def reg_write(self, instance_id, addr, reg, val, print_time=None):
         minclock = 0
         if print_time is not None:
             minclock = self.mcu.print_time_to_clock(print_time)
+        minclock = self._calc_min_clock(minclock)
         if self.analog_mux is not None:
             self.analog_mux.activate(instance_id)
         msg = self._encode_write(0xf5, addr, reg | 0x80, val)
-        self.tmcuart_send_cmd.send([self.oid, msg, 0], minclock=minclock)
+        params = self.tmcuart_send_cmd.send([self.oid, msg, 0],
+                                            minclock=minclock)
+        self.min_time = params['#receive_time'] + 12. / TMC_BAUD_RATE
 
 # Lookup a (possibly shared) tmc uart
 def lookup_tmc_uart_bitbang(config, max_addr):
