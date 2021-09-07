@@ -40,7 +40,7 @@ make menuconfig
 ```
 In the menu, set "Microcontroller Architecture" to "Linux process," then save and exit.
 
-To build and install the new micro-controller code, run:
+To build and install (using `flash`) the new micro-controller code into `/usr/local/bin`, run:
 ```
 sudo service klipper stop
 make flash
